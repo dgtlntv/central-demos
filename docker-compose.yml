@@ -9,8 +9,16 @@ services:
             - ./nginx.conf:/etc/nginx/nginx.conf:ro
             - ./static/index.html:/usr/share/nginx/html/index.html:ro
         depends_on:
+            - session-manager
             - app1-frontend
             - app2-frontend
+        networks:
+            - demo-network
+
+    session-manager:
+        build: ./session-manager
+        expose:
+            - "8080"
         networks:
             - demo-network
 

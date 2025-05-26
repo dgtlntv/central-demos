@@ -5,10 +5,29 @@
     </head>
     <body>
         <h1>Demo Platform</h1>
-        <p>Available applications:</p>
-        <ul>
-            <li><a href="http://app1.localhost">App1</a> (app1.localhost)</li>
-            <li><a href="http://app2.localhost">App2</a> (app2.localhost)</li>
-        </ul>
+        <p>Single sign-on demo platform with Ubuntu SSO authentication.</p>
+
+        <div class="apps">
+            <h3>Available Applications:</h3>
+            <ul>
+                <li>
+                    <strong><a href="http://app1.myapp.local">App1</a></strong>
+                    (app1.myapp.local)
+                </li>
+                <li>
+                    <strong><a href="http://app2.myapp.local">App2</a></strong>
+                    (app2.myapp.local)
+                </li>
+            </ul>
+        </div>
+
+        <div style="margin-top: 30px">
+            <h3>Authentication:</h3>
+            <p>
+                <a href="/login" class="login-link">Login with Ubuntu SSO</a> |
+                <a href="/user">Check Auth Status</a> |
+                <a href="/logout" class="logout-link">Logout</a>
+            </p>
+        </div>
     </body>
 </html>

@@ -1,0 +1,14 @@
+[project]
+name = "session-manager"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115.12",
+    "httpx>=0.28.1",
+    "itsdangerous>=2.2.0",
+    "python-multipart>=0.0.20",
+    "starlette>=0.46.2",
+    "uvicorn>=0.34.2",
+]
