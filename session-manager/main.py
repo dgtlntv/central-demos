@@ -1,11 +1,14 @@
 import logging
 import secrets
-from typing import Any, Dict, Optional
-from urllib.parse import urlencode
+from typing import Any, Dict
 
-import httpx
-from fastapi import FastAPI, HTTPException, Request
+from django_openid_auth.teams import TeamsRequest, TeamsResponse
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
+from openid.consumer import consumer
+from openid.consumer.discover import DiscoveryFailure
+from openid.extensions import sreg
+from openid.store.memstore import MemoryStore
 from starlette.middleware.sessions import SessionMiddleware
 
 # Configuration
@@ -23,133 +26,188 @@ app.add_middleware(
     secret_key=SECRET_KEY,
     domain=".myapp.local",
 )
-# In-memory session storage for simplicity
-sessions: Dict[str, Dict[str, Any]] = {}
+
+# OpenID store and session storage
+openid_store = MemoryStore()
+openid_sessions: Dict[str, Dict[str, Any]] = {}
 
 
 class OpenIDAuth:
     def __init__(self):
-        self.discovery_url = (
-            f"{SSO_LOGIN_URL}/.well-known/openid_configuration"
-        )
-        self.client_id = "demo-platform"
+        self.store = openid_store
+        self.sso_url = SSO_LOGIN_URL
+        self.team = SSO_TEAM
 
-    async def get_openid_config(self):
-        """Get OpenID configuration from Ubuntu SSO"""
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.get(self.discovery_url)
-                return response.json()
-            except Exception as e:
-                logger.error(f"Failed to get OpenID config: {e}")
-                return None
+    def _get_session_id(self, request: Request) -> str:
+        """Get or create a session ID for OpenID"""
+        if "openid_session_id" not in request.session:
+            request.session["openid_session_id"] = secrets.token_urlsafe(32)
+        return request.session["openid_session_id"]
 
-    def build_auth_url(self, redirect_uri: str, state: str) -> str:
-        """Build the authorization URL for Ubuntu SSO"""
-        params = {
-            "openid.mode": "checkid_setup",
-            "openid.ns": "http://specs.openid.net/auth/2.0",
-            "openid.identity": "http://specs.openid.net/auth/2.0/identifier_select",
-            "openid.claimed_id": "http://specs.openid.net/auth/2.0/identifier_select",
-            "openid.return_to": redirect_uri,
-            "openid.realm": redirect_uri.split("/callback")[0],
-            "openid.ns.sreg": "http://openid.net/extensions/sreg/1.1",
-            "openid.sreg.required": "email",
-            "openid.ns.lp": "http://ns.launchpad.net/2007/openid-teams",
-            "openid.lp.query_membership": SSO_TEAM,
-        }
-        return f"{SSO_LOGIN_URL}/+openid?{urlencode(params)}"
+    def _get_openid_session(self, request: Request) -> Dict[str, Any]:
+        """Get OpenID session storage"""
+        session_id = self._get_session_id(request)
+        if session_id not in openid_sessions:
+            openid_sessions[session_id] = {}
+        return openid_sessions[session_id]
 
-    async def verify_response(
-        self, request: Request
-    ) -> Optional[Dict[str, Any]]:
-        """Verify the OpenID response from Ubuntu SSO"""
-        params = dict(request.query_params)
+    def get_consumer(self, request: Request):
+        """Get OpenID consumer instance"""
+        openid_session = self._get_openid_session(request)
+        return consumer.Consumer(openid_session, self.store)
 
-        # Check if this is a positive response
-        if params.get("openid.mode") != "id_res":
-            return None
+    def build_trust_root(self, request: Request) -> str:
+        """Build trust root URL"""
+        return f"{request.url.scheme}://{request.url.netloc}"
 
-        # Verify the response by checking with SSO
-        verify_params = params.copy()
-        verify_params["openid.mode"] = "check_authentication"
+    def build_return_to(self, request: Request) -> str:
+        """Build return URL"""
+        return f"{request.url.scheme}://{request.url.netloc}/callback"
 
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.post(
-                    SSO_LOGIN_URL + "/+openid", data=verify_params
-                )
-                if "is_valid:true" not in response.text:
-                    logger.error("OpenID verification failed")
-                    return None
+    async def initiate_login(self, request: Request) -> str:
+        """Initiate OpenID login and return redirect URL"""
+        try:
+            # Create OpenID consumer
+            oid_consumer = self.get_consumer(request)
 
+            # Begin OpenID authentication
+            auth_request = oid_consumer.begin(self.sso_url)
+
+            # Add Simple Registration extension for email
+            sreg_request = sreg.SRegRequest(required=["email"])
+            auth_request.addExtension(sreg_request)
+
+            # Add teams extension for team membership
+            teams_request = TeamsRequest(query_membership=[self.team])
+            auth_request.addExtension(teams_request)
+
+            # Build URLs
+            trust_root = self.build_trust_root(request)
+            return_to = self.build_return_to(request)
+
+            # Get redirect URL
+            return auth_request.redirectURL(trust_root, return_to)
+
+        except DiscoveryFailure as e:
+            logger.error(f"OpenID discovery failed: {e}")
+            raise HTTPException(
+                status_code=500, detail="Authentication service unavailable"
+            )
+        except Exception as e:
+            logger.error(f"Login initiation error: {e}")
+            raise HTTPException(status_code=500, detail="Login failed")
+
+    async def handle_callback(self, request: Request) -> Dict[str, Any]:
+        """Handle OpenID callback and return user info"""
+        try:
+            # Create OpenID consumer
+            oid_consumer = self.get_consumer(request)
+
+            # Get current URL for verification
+            current_url = f"{request.url.scheme}://{request.url.netloc}{request.url.path}?{request.url.query}"
+
+            # Complete the authentication
+            response = oid_consumer.complete(
+                dict(request.query_params), current_url
+            )
+
+            if response.status == consumer.SUCCESS:
                 # Check team membership
-                team_membership = params.get("openid.lp.is_member", "")
-                if SSO_TEAM not in team_membership:
-                    logger.error(f"User not member of {SSO_TEAM}")
-                    return None
+                teams_response = TeamsResponse.fromSuccessResponse(response)
+                if (
+                    teams_response
+                    and self.team not in teams_response.is_member
+                ):
+                    logger.error(f"User not member of {self.team}")
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Access denied - not a team member",
+                    )
 
+                # Get user info from Simple Registration extension
+                sreg_response = sreg.SRegResponse.fromSuccessResponse(response)
+                email = sreg_response.get("email") if sreg_response else None
+
+                # Return user info
                 return {
-                    "identity_url": params.get("openid.identity"),
-                    "email": params.get("openid.sreg.email"),
-                    "teams": team_membership.split(",")
-                    if team_membership
+                    "identity_url": response.identity_url,
+                    "email": email,
+                    "teams": teams_response.is_member
+                    if teams_response
                     else [],
                 }
-            except Exception as e:
-                logger.error(f"Verification failed: {e}")
-                return None
+
+            elif response.status == consumer.CANCEL:
+                raise HTTPException(
+                    status_code=400, detail="Authentication cancelled"
+                )
+            elif response.status == consumer.FAILURE:
+                logger.error(
+                    f"OpenID authentication failed: {response.message}"
+                )
+                raise HTTPException(
+                    status_code=403, detail="Authentication failed"
+                )
+            else:
+                raise HTTPException(
+                    status_code=400, detail="Unknown authentication status"
+                )
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Callback handling error: {e}")
+            raise HTTPException(
+                status_code=400, detail="Authentication callback failed"
+            )
 
 
 openid_auth = OpenIDAuth()
 
 
+def login_required(request: Request):
+    """Dependency that checks if user is logged in"""
+    user = request.session.get("user")
+    if not user:
+        # Store current URL for redirect after login
+        next_url = str(request.url)
+        raise HTTPException(
+            status_code=401,
+            detail=f"Not authenticated. Please login at /login?next_url={next_url}",
+        )
+    return user
+
+
 @app.get("/login")
-async def login(request: Request, next_url: str = "/"):
+async def login(request: Request, next: str = "/", next_url: str = None):
     """Initiate OpenID login flow"""
+    # Use next_url if provided (from nginx), otherwise use next
+    redirect_after_login = next_url or next
+
     # Check if already logged in
     if "user" in request.session:
-        return RedirectResponse(url=next_url)
+        return RedirectResponse(url=redirect_after_login)
 
-    # Generate state for CSRF protection
-    state = secrets.token_urlsafe(32)
-    request.session["oauth_state"] = state
-    request.session["next_url"] = next_url
+    # Store next URL for after login
+    request.session["next_url"] = redirect_after_login
 
-    # Build redirect URI
-    redirect_uri = f"{request.url.scheme}://{request.url.netloc}/callback"
-
-    # Build auth URL
-    auth_url = openid_auth.build_auth_url(redirect_uri, state)
-
+    # Get redirect URL from OpenID auth handler
+    auth_url = await openid_auth.initiate_login(request)
     return RedirectResponse(url=auth_url)
 
 
 @app.get("/callback")
 async def callback(request: Request):
     """Handle OpenID callback"""
-    try:
-        # Verify the OpenID response
-        user_info = await openid_auth.verify_response(request)
+    # Handle callback through OpenID auth handler
+    user_info = await openid_auth.handle_callback(request)
 
-        if not user_info:
-            raise HTTPException(
-                status_code=403, detail="Authentication failed"
-            )
+    # Store user in session
+    request.session["user"] = user_info
 
-        # Store user in session
-        request.session["user"] = user_info
-
-        # Get the next URL and redirect
-        next_url = request.session.pop("next_url", "/")
-
-        return RedirectResponse(url=next_url)
-
-    except Exception as e:
-        logger.error(f"Callback error: {e}")
-        raise HTTPException(
-            status_code=400, detail="Authentication callback failed"
-        )
+    # Redirect to next URL
+    next_url = request.session.pop("next_url", "/")
+    return RedirectResponse(url=next_url)
 
 
 @app.get("/logout")
@@ -160,32 +218,27 @@ async def logout(request: Request):
 
 
 @app.get("/verify-and-inject")
-async def verify_and_inject(request: Request):
+async def verify_and_inject(user: dict = Depends(login_required)):
     """Endpoint for Nginx auth_request module"""
-    user = request.session.get("user")
-
-    if not user:
-        return JSONResponse(
-            status_code=401, content={"error": "Not authenticated"}
-        )
-
     # Return user info with headers for injection
     headers = {
-        "X-User-Email": user["email"],
-        "X-User-Identity": user["identity_url"],
+        "X-User-Email": user.get("email", ""),
+        "X-User-Identity": user.get("identity_url", ""),
         "X-Authenticated": "true",
     }
     return JSONResponse(content={"authenticated": True}, headers=headers)
 
 
 @app.get("/user")
-async def get_user(request: Request):
+async def get_user(user: dict = Depends(login_required)):
     """Get current user info"""
-    user = request.session.get("user")
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
     return {"user": user}
+
+
+@app.get("/protected")
+async def protected_route(user: dict = Depends(login_required)):
+    """Example protected route"""
+    return {"message": f"Hello {user.get('email', 'user')}!", "user": user}
 
 
 @app.get("/health")
