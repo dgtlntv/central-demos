@@ -1,0 +1,37 @@
+version: "3.8"
+
+services:
+    nginx:
+        image: nginx:alpine
+        ports:
+            - "80:80"
+        volumes:
+            - ./nginx.conf:/etc/nginx/nginx.conf:ro
+            - ./static/index.html:/usr/share/nginx/html/index.html:ro
+        depends_on:
+            - app1-frontend
+            - app2-frontend
+        networks:
+            - demo-network
+
+    app1-frontend:
+        image: nginx:alpine
+        volumes:
+            - ./static/app1:/usr/share/nginx/html:ro
+        expose:
+            - "80"
+        networks:
+            - demo-network
+
+    app2-frontend:
+        image: nginx:alpine
+        volumes:
+            - ./static/app2:/usr/share/nginx/html:ro
+        expose:
+            - "80"
+        networks:
+            - demo-network
+
+networks:
+    demo-network:
+        driver: bridge
