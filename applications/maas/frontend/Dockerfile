@@ -1,26 +1,19 @@
-# Use Node.js LTS version for building
 FROM node:24-alpine as builder
 
-# Set working directory
 WORKDIR /app
 
-# Install git to clone the repository
 RUN apk add --no-cache git
 
-# Clone the MAAS UI repository
 RUN git clone https://github.com/canonical/maas-ui.git .
 
-# Install dependencies and build the application
-# The cleanbuild command runs: yarn clean-all && yarn build
+ENV MAAS_URL=http://10.48.119.165:5240/
+
 RUN yarn cleanbuild
 
-# Production stage - serve with nginx
 FROM nginx:alpine
 
-# Copy the built application from builder stage to the correct path
 COPY --from=builder /app/build /usr/share/nginx/html/MAAS/r
 
-# Create nginx configuration for SPA routing and base path
 RUN echo 'server { \
     listen 80; \
     server_name localhost; \
