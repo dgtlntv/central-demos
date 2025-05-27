@@ -22,7 +22,7 @@ services:
         networks:
             - demo-network
 
-        build-manager:
+    build-manager:
         build: ./build-manager
         ports:
             - "8080:8080"
