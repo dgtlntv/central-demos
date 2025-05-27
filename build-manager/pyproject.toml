@@ -1,0 +1,13 @@
+[project]
+name = "build-manager"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "apscheduler>=3.11.0",
+    "fastapi>=0.115.12",
+    "pydantic>=2.11.5",
+    "pytz>=2025.2",
+    "uvicorn>=0.34.2",
+]

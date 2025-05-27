@@ -10,7 +10,7 @@ services:
             - ./static/index.html:/usr/share/nginx/html/index.html:ro
         depends_on:
             - session-manager
-            - app1-frontend
+            - maas-frontend
             - app2-frontend
         networks:
             - demo-network
@@ -22,10 +22,22 @@ services:
         networks:
             - demo-network
 
-    app1-frontend:
-        image: nginx:alpine
+        build-manager:
+        build: ./build-manager
+        ports:
+            - "8080:8080"
         volumes:
-            - ./static/app1:/usr/share/nginx/html:ro
+            - /var/run/docker.sock:/var/run/docker.sock
+            - .:/docker-compose:ro
+        networks:
+            - demo-network
+        depends_on:
+            - session-manager
+            - maas-frontend
+            - app2-frontend
+
+    maas-frontend:
+        build: ./applications/maas/frontend
         expose:
             - "80"
         networks:
