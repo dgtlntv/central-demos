@@ -24,6 +24,67 @@ RUN echo 'server { \
     root /usr/share/nginx/html; \
     index index.html; \
     \
+    # Proxy API endpoints to MAAS backend \
+    location /MAAS/api/ { \
+        proxy_pass ${MAAS_URL}; \
+        proxy_set_header Host $host; \
+        proxy_set_header X-Real-IP $remote_addr; \
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; \
+        proxy_set_header X-Forwarded-Proto $scheme; \
+        proxy_set_header Origin ${MAAS_URL}; \
+        proxy_set_header Referer ${MAAS_URL}$request_uri; \
+        proxy_redirect off; \
+    } \
+    \
+    location /MAAS/accounts/ { \
+        proxy_pass ${MAAS_URL}; \
+        proxy_set_header Host $host; \
+        proxy_set_header X-Real-IP $remote_addr; \
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; \
+        proxy_set_header X-Forwarded-Proto $scheme; \
+        proxy_set_header Origin ${MAAS_URL}; \
+        proxy_set_header Referer ${MAAS_URL}$request_uri; \
+        proxy_redirect off; \
+    } \
+    \
+    location /MAAS/a/ { \
+        proxy_pass ${MAAS_URL}; \
+        proxy_set_header Host $host; \
+        proxy_set_header X-Real-IP $remote_addr; \
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; \
+        proxy_set_header X-Forwarded-Proto $scheme; \
+        proxy_set_header Origin ${MAAS_URL}; \
+        proxy_set_header Referer ${MAAS_URL}$request_uri; \
+        proxy_redirect off; \
+    } \
+    \
+    location /MAAS/docs/ { \
+        proxy_pass ${MAAS_URL}; \
+        proxy_set_header Host $host; \
+        proxy_set_header X-Real-IP $remote_addr; \
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; \
+        proxy_set_header X-Forwarded-Proto $scheme; \
+        proxy_set_header Origin ${MAAS_URL}; \
+        proxy_set_header Referer ${MAAS_URL}$request_uri; \
+        proxy_redirect off; \
+    } \
+    \
+    # Proxy WebSocket endpoint \
+    location /MAAS/ws/ { \
+        proxy_pass ${MAAS_URL}; \
+        proxy_http_version 1.1; \
+        proxy_set_header Upgrade $http_upgrade; \
+        proxy_set_header Connection "upgrade"; \
+        proxy_set_header Host $host; \
+        proxy_set_header X-Real-IP $remote_addr; \
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; \
+        proxy_set_header X-Forwarded-Proto $scheme; \
+        proxy_set_header Origin ${MAAS_URL}; \
+        proxy_set_header Referer ${MAAS_URL}$request_uri; \
+        proxy_cache_bypass $http_upgrade; \
+        proxy_read_timeout 86400; \
+    } \
+    \
     # Handle the base path /MAAS/r/ \
     location /MAAS/r/ { \
         try_files $uri $uri/ /MAAS/r/index.html; \
@@ -31,6 +92,15 @@ RUN echo 'server { \
     \
     # Redirect root to the base path (preserve port) \
     location = / { \
+        return 301 $scheme://$http_host/MAAS/r/; \
+    } \
+    \
+    # Redirect MAAS base to the UI \
+    location = /MAAS { \
+        return 301 $scheme://$http_host/MAAS/r/; \
+    } \
+    \
+    location = /MAAS/ { \
         return 301 $scheme://$http_host/MAAS/r/; \
     } \
     \
