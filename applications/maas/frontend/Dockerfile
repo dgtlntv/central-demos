@@ -1,3 +1,5 @@
+ARG MAAS_URL=http://10.48.119.165:5240/
+
 FROM node:24-alpine as builder
 
 WORKDIR /app
@@ -6,13 +8,15 @@ RUN apk add --no-cache git
 
 RUN git clone https://github.com/canonical/maas-ui.git .
 
-ENV MAAS_URL=http://10.48.119.165:5240/
+ENV MAAS_URL=${MAAS_URL}
 
 RUN yarn cleanbuild
 
 FROM nginx:alpine
 
 COPY --from=builder /app/build /usr/share/nginx/html/MAAS/r
+
+ENV MAAS_URL=${MAAS_URL}
 
 RUN echo 'server { \
     listen 80; \
