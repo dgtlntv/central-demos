@@ -1,4 +1,5 @@
 import logging
+import os
 import secrets
 from typing import Any, Dict
 
@@ -21,10 +22,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Demo Platform Session Manager")
+
+# Dynamic configuration from environment
+BASE_DOMAIN = os.getenv("BASE_DOMAIN", "myapp.local")
+BASE_URL = f"http://{BASE_DOMAIN}"
+
 app.add_middleware(
     SessionMiddleware,
     secret_key=SECRET_KEY,
-    domain=".myapp.local",
+    domain=f".{BASE_DOMAIN}",
 )
 
 # OpenID store and session storage
@@ -57,12 +63,12 @@ class OpenIDAuth:
         return consumer.Consumer(openid_session, self.store)
 
     def build_trust_root(self, request: Request) -> str:
-        """Build trust root URL"""
-        return f"{request.url.scheme}://{request.url.netloc}"
+        """Build trust root URL from environment"""
+        return BASE_URL
 
     def build_return_to(self, request: Request) -> str:
-        """Build return URL"""
-        return f"{request.url.scheme}://{request.url.netloc}/callback"
+        """Build return URL from environment"""
+        return f"{BASE_URL}/callback"
 
     async def initiate_login(self, request: Request) -> str:
         """Initiate OpenID login and return redirect URL"""

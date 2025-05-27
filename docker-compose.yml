@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
     nginx:
         image: nginx:alpine
@@ -21,6 +19,8 @@ services:
             - "8080"
         networks:
             - demo-network
+        environment:
+            - BASE_DOMAIN=iii.ooo
 
     build-manager:
         build: ./build-manager
