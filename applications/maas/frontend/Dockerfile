@@ -10,7 +10,7 @@ RUN git clone https://github.com/canonical/maas-ui.git .
 
 ENV MAAS_URL=${MAAS_URL}
 
-RUN yarn cleanbuild
+RUN yarn build
 
 FROM nginx:alpine
 
