@@ -1,4 +1,4 @@
-ARG MAAS_URL=http://10.48.119.165:5240/
+ARG MAAS_URL=http://10.48.119.118:5240/
 
 FROM node:24-alpine as builder
 
